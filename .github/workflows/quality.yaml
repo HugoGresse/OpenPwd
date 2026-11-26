@@ -14,6 +14,8 @@ permissions:
   contents: read
 
 env:
+  # Must match the Bun that wrote bun.lock: an older Bun cannot read a newer lockfile.
+  BUN_VERSION: 1.4.2
   HADOLINT_VERSION: v2.15.1
   HADOLINT_SHA256: c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
   # Placeholders so that the build and type checks can validate the declared environment.
@@ -31,15 +33,11 @@ jobs:
       - name: set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version-file: package.json
+          bun-version: ${{ env.BUN_VERSION }}
       - name: set up uv
         uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - name: set up Trivy
         uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
-      - name: set up the Supabase CLI
-        uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3.2.0
-        with:
-          version: 3.1.0
       - name: install hadolint
         run: |
           curl --fail --silent --show-error --location --output hadolint \
@@ -53,9 +51,15 @@ jobs:
         run: uvx pre-commit run --all-files --show-diff-on-failure
       - name: run the unit tests
         run: bun run test
+      - name: build the application
+        run: bun run build
+      # Kept last: this action puts its own, older Bun first on the PATH, which cannot read
+      # bun.lock. Every step that runs Bun must come before it.
+      - name: set up the Supabase CLI
+        uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3.2.0
+        with:
+          version: 3.1.0
       - name: start the local database
         run: supabase db start
       - name: run the database access-rule tests
         run: supabase test db
-      - name: build the application
-        run: bun run build
