@@ -22,12 +22,20 @@
 		<span class="sr-only">Search passwords</span>
 		<input type="search" placeholder="Search by title, site or username" bind:value={search} />
 	</label>
-	<a
-		class="btn btn-primary"
-		href={resolve('/(app)/orgs/[orgId]/entries/new', { orgId: data.organization.id })}
-	>
-		New password
-	</a>
+	<div class="row">
+		<a
+			class="btn btn-secondary"
+			href={resolve('/(app)/orgs/[orgId]/import', { orgId: data.organization.id })}
+		>
+			Import
+		</a>
+		<a
+			class="btn btn-primary"
+			href={resolve('/(app)/orgs/[orgId]/entries/new', { orgId: data.organization.id })}
+		>
+			New password
+		</a>
+	</div>
 </div>
 
 {#if data.entries.length === 0}
