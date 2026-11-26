@@ -14,11 +14,5 @@
 		entryId: data.entry.id
 	})}
 	error={form?.message}
-	initial={{
-		title: data.entry.title,
-		url: data.entry.url ?? '',
-		username: data.entry.username ?? '',
-		note: data.entry.note,
-		fields: data.entry.fields
-	}}
+	existing={data.entry}
 />

@@ -46,7 +46,7 @@ declare
 begin
     select role into v_role
     from public.organization_members
-    where org_id = p_org_id and user_id = auth.uid();
+    where org_id = p_org_id and user_id = private.current_member_id();
 
     if v_role is null or not (v_role = any(p_roles)) then
         raise exception 'forbidden' using errcode = '42501';
@@ -56,16 +56,25 @@ begin
 end;
 $$;
 
+-- Locks the organization first: two owners leaving at the same moment would otherwise both
+-- see two owners and leave none.
 create function private.owner_count(p_org_id uuid)
 returns integer
-language sql
-stable
+language plpgsql
 security definer
 set search_path = ''
 as $$
-    select count(*)::integer
+declare
+    v_count integer;
+begin
+    perform 1 from public.organizations where id = p_org_id for update;
+
+    select count(*)::integer into v_count
     from public.organization_members
     where org_id = p_org_id and role = 'owner';
+
+    return v_count;
+end;
 $$;
 
 create function private.handle_new_user()
@@ -118,7 +127,7 @@ as $$
 declare
     v_org_id uuid;
 begin
-    if auth.uid() is null then
+    if private.current_member_id() is null then
         raise exception 'forbidden' using errcode = '42501';
     end if;
 
@@ -145,8 +154,14 @@ declare
     v_caller_role public.org_role := private.require_role(p_org_id, array['owner', 'admin']::public.org_role []);
     v_email text := lower(btrim(p_email));
     v_user_id uuid;
+    v_invited_role public.org_role;
 begin
-    if p_role = 'owner' and v_caller_role <> 'owner' then
+    select role into v_invited_role
+    from public.organization_invites
+    where org_id = p_org_id and email = v_email;
+
+    -- Only an owner may hand out ownership, or change an invite an owner made for one.
+    if (p_role = 'owner' or v_invited_role = 'owner') and v_caller_role <> 'owner' then
         raise exception 'forbidden' using errcode = '42501';
     end if;
 
@@ -261,14 +276,23 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+    v_caller_role public.org_role := private.require_role(p_org_id, array['owner', 'admin']::public.org_role []);
+    v_invited_role public.org_role;
 begin
-    perform private.require_role(p_org_id, array['owner', 'admin']::public.org_role []);
+    select role into v_invited_role
+    from public.organization_invites
+    where org_id = p_org_id and email = lower(btrim(p_email));
 
-    delete from public.organization_invites where org_id = p_org_id and email = lower(btrim(p_email));
-
-    if not found then
+    if v_invited_role is null then
         raise exception 'not_found' using errcode = 'P0002';
     end if;
+
+    if v_invited_role = 'owner' and v_caller_role <> 'owner' then
+        raise exception 'forbidden' using errcode = '42501';
+    end if;
+
+    delete from public.organization_invites where org_id = p_org_id and email = lower(btrim(p_email));
 
     perform private.log_audit(
         p_org_id, null, null, 'invite.remove', jsonb_build_object('email', lower(btrim(p_email)))

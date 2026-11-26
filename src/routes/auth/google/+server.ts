@@ -1,5 +1,5 @@
 import { error, redirect } from '@sveltejs/kit';
-import { KMS_SCOPE, safeNextPath } from '#lib/server/google-session.ts';
+import { GOOGLE_SCOPES, safeNextPath } from '#lib/server/google-session.ts';
 import { settings } from '#lib/server/settings.ts';
 import type { RequestHandler } from './$types';
 
@@ -12,7 +12,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		provider: 'google',
 		options: {
 			redirectTo: callback.toString(),
-			scopes: KMS_SCOPE,
+			scopes: GOOGLE_SCOPES,
 			queryParams: {
 				hd: settings.allowedGoogleDomain,
 				...(locals.user ? { login_hint: locals.user.email } : { prompt: 'select_account' })
@@ -21,5 +21,5 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	});
 	if (signInError || !data.url) error(503, 'Google sign-in is unavailable.');
 
-	redirect(303, data.url);
+	redirect(303, data.url, { external: [settings.supabaseUrl] });
 };

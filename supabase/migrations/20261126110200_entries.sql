@@ -16,6 +16,12 @@ as $$
 begin
     perform private.require_role(p_org_id, array['owner', 'admin', 'member']::public.org_role []);
 
+    -- An id is used once, ever. Re-creating a deleted entry under its old id would restart the
+    -- version counter and let superseded ciphertexts be replayed as current.
+    if exists (select 1 from public.audit_log where entry_id = p_entry_id) then
+        raise exception 'forbidden' using errcode = '42501';
+    end if;
+
     insert into public.entries (
         id, org_id, title, url, username, field_labels, has_note, secret_ciphertext, created_by, updated_by
     )
@@ -138,6 +144,10 @@ begin
     if v_entry.id is null or not private.is_org_member(v_entry.org_id) then
         raise exception 'not_found' using errcode = 'P0002';
     end if;
+
+    -- One reveal at a time per member: parallel requests would otherwise all count the same
+    -- committed rows and slip past the limit together.
+    perform pg_advisory_xact_lock(hashtextextended(auth.uid()::text, 0));
 
     select count(*)::integer into v_recent
     from public.audit_log

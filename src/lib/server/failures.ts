@@ -48,7 +48,7 @@ const CIPHER_FAILURES: Record<CipherError['reason'], Failure> = {
 export class DomainError extends Error {
 	readonly code: string;
 
-	constructor(code: 'not_found' | 'forbidden') {
+	constructor(code: 'not_found' | 'forbidden' | 'version_conflict') {
 		super(code);
 		this.name = 'DomainError';
 		this.code = code;

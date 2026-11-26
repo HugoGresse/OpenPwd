@@ -116,6 +116,7 @@ create table public.audit_log (
 
 create index audit_log_org_created_idx on public.audit_log (org_id, created_at desc); -- noqa: PG01
 create index audit_log_actor_created_idx on public.audit_log (actor_id, created_at desc); -- noqa: PG01
+create index audit_log_entry_idx on public.audit_log (entry_id); -- noqa: PG01
 
 create function private.reject_audit_change()
 returns trigger
@@ -134,6 +135,49 @@ create trigger audit_log_no_truncate
 before truncate on public.audit_log
 for each statement execute function private.reject_audit_change();
 
+create function private.setting(p_key text)
+returns text
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+    select value from private.instance_settings where key = p_key;
+$$;
+
+-- A valid JWT is not enough: the session behind it must still exist, be recent, and have been
+-- opened through Google.
+-- * Signing out, or deleting the session, cuts access at once instead of at JWT expiry.
+-- * Every Google re-authentication creates a new session, so a session older than the limit
+--   belongs to someone who has stopped passing it (an account removed from the Workspace).
+-- * A session opened any other way (a password set through the Auth API) is never accepted,
+--   unless password login is switched on for local development.
+-- Hosted Supabase only offers session time-boxing on paid plans; this works on every plan.
+create function private.current_member_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+    select sessions.user_id
+    from auth.sessions as sessions
+    where
+        sessions.id = nullif((select auth.jwt()) ->> 'session_id', '')::uuid
+        and sessions.user_id = (select auth.uid())
+        and sessions.created_at > now() - make_interval(
+            mins => coalesce(private.setting('max_session_minutes')::integer, 120)
+        )
+        and (
+            private.setting('allow_password_login') is not distinct from 'true'
+            or exists (
+                select 1
+                from auth.mfa_amr_claims as methods
+                where methods.session_id = sessions.id and methods.authentication_method = 'oauth'
+            )
+        );
+$$;
+
 create function private.is_org_member(p_org_id uuid)
 returns boolean
 language sql
@@ -144,7 +188,7 @@ as $$
     select exists (
         select 1
         from public.organization_members
-        where org_id = p_org_id and user_id = (select auth.uid())
+        where org_id = p_org_id and user_id = private.current_member_id()
     );
 $$;
 
@@ -160,7 +204,7 @@ as $$
         from public.organization_members
         where
             org_id = p_org_id
-            and user_id = (select auth.uid())
+            and user_id = private.current_member_id()
             and role = any(p_roles)
     );
 $$;
@@ -176,7 +220,7 @@ as $$
         select 1
         from public.organization_members as mine
         inner join public.organization_members as theirs on mine.org_id = theirs.org_id
-        where mine.user_id = (select auth.uid()) and theirs.user_id = p_user_id
+        where mine.user_id = private.current_member_id() and theirs.user_id = p_user_id
     );
 $$;
 
