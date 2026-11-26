@@ -22,7 +22,7 @@ export const GET: RequestHandler = async (event) => {
 		data.user?.identities ?? (await locals.supabase.auth.getUserIdentities()).data?.identities;
 	const userinfo = await fetchGoogleIdentity(globalThis.fetch, googleToken);
 	if (!isWorkspaceSignIn(identities ?? [], userinfo, settings.allowedGoogleDomain)) {
-		await endSession(event, 'global');
+		await endSession(event);
 		redirect(303, '/login?error=workspace');
 	}
 

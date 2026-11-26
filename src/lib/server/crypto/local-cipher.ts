@@ -20,6 +20,8 @@ export async function createLocalCipher(base64Key: string): Promise<SecretCipher
 	const additionalData = (aad: string) => new TextEncoder().encode(aad);
 
 	return {
+		keyName: null,
+
 		async encrypt(plaintext, aad) {
 			const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
 			const sealed = await crypto.subtle.encrypt(

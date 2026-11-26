@@ -7,8 +7,8 @@ const CORE_COLUMNS = ['title', 'url', 'username', 'password', 'note'] as const;
 type CoreColumn = (typeof CORE_COLUMNS)[number];
 
 const HEADER_ALIASES: Record<CoreColumn, readonly string[]> = {
-	title: ['title', 'name', 'site', 'service', 'titre', 'nom'],
-	url: ['url', 'website', 'link', 'address', 'site web', 'lien', 'adresse'],
+	title: ['title', 'name', 'service', 'titre', 'nom'],
+	url: ['url', 'website', 'site', 'link', 'address', 'site web', 'lien', 'adresse'],
 	username: ['username', 'user', 'login', 'email', 'e-mail', 'identifiant', 'utilisateur'],
 	password: ['password', 'pass', 'pwd', 'mot de passe', 'mdp'],
 	note: ['note', 'notes', 'comment', 'comments', 'remarque', 'commentaire']
@@ -31,30 +31,49 @@ export interface ImportPreview {
 	problem?: string;
 }
 
+const isLineBreak = (char: string | undefined): boolean => char === '\n' || char === '\r';
+
+/**
+ * Index of the quote closing the cell opened at `open`, or -1 when that quote is just a
+ * character. Documents and spreadsheets copy a cell as it is, without CSV escaping, unless it
+ * holds a line break: a password starting with `"` must not swallow the cells after it.
+ */
+function closingQuote(text: string, open: number, delimiter: string): number {
+	const pasted = delimiter === '\t';
+	let spansLines = false;
+
+	for (let index = open + 1; index < text.length; index += 1) {
+		const char = text[index];
+		if (pasted && char === '\t') return -1;
+		if (isLineBreak(char)) spansLines = true;
+		if (char !== '"') continue;
+		if (text[index + 1] === '"') {
+			index += 1;
+			continue;
+		}
+		const next = text[index + 1];
+		const endsCell = next === undefined || next === delimiter || isLineBreak(next);
+		return endsCell && (spansLines || !pasted) ? index : -1;
+	}
+	return -1;
+}
+
 /** RFC 4180 quoting: a quoted cell may contain the delimiter, line breaks and doubled quotes. */
 export function parseDelimited(text: string, delimiter: string): string[][] {
 	const rows: string[][] = [];
 	let row: string[] = [];
 	let cell = '';
-	let quoted = false;
 
 	for (let index = 0; index < text.length; index += 1) {
-		const char = text[index];
-		if (quoted) {
-			if (char === '"' && text[index + 1] === '"') {
-				cell += '"';
-				index += 1;
-			} else if (char === '"') {
-				quoted = false;
-			} else {
-				cell += char;
-			}
-		} else if (char === '"' && cell === '') {
-			quoted = true;
+		const char = text[index] ?? '';
+		const closing = char === '"' && cell === '' ? closingQuote(text, index, delimiter) : -1;
+		if (closing !== -1) {
+			cell = text.slice(index + 1, closing).replaceAll('""', '"');
+			index = closing;
 		} else if (char === delimiter) {
 			row.push(cell);
 			cell = '';
-		} else if (char === '\n' || char === '\r') {
+		} else if (isLineBreak(char)) {
 			if (char === '\r' && text[index + 1] === '\n') index += 1;
 			rows.push([...row, cell]);
 			row = [];
@@ -90,7 +109,28 @@ function normaliseUrl(raw: string): { url: string; problem?: string } {
 	return { url: candidate };
 }
 
-function toRow(cells: string[], headers: string[] | undefined, line: number): ImportRow {
+/**
+ * The first header naming a column gets it. A later one ("Email" after "Login") is kept as a
+ * secret field under its own name instead of overwriting the first.
+ */
+function assignColumns(headers: readonly string[]): (CoreColumn | undefined)[] {
+	const taken = new Set<CoreColumn>();
+	return headers.map((header) => {
+		const column = coreColumnOf(header);
+		if (!column || taken.has(column)) return undefined;
+		taken.add(column);
+		return column;
+	});
+}
+
+interface Header {
+	names: readonly string[];
+	columns: readonly (CoreColumn | undefined)[];
+}
+
+const spansCells = (value: string): boolean => /[\t\n\r]/.test(value);
+
+function toRow(cells: string[], header: Header | undefined, line: number): ImportRow {
 	const row: ImportRow = {
 		line,
 		title: '',
@@ -103,13 +143,13 @@ function toRow(cells: string[], headers: string[] | undefined, line: number): Im
 	const extraNotes: string[] = [];
 
 	cells.forEach((cell, index) => {
-		const header = headers?.[index];
-		const column = headers ? coreColumnOf(header ?? '') : CORE_COLUMNS[index];
+		const name = header?.names[index]?.trim();
+		const column = header ? header.columns[index] : CORE_COLUMNS[index];
 		// Passwords are kept byte for byte: a leading or trailing space may be part of one.
 		if (column === 'password') row.password = cell;
 		else if (column) row[column] = cell.trim();
 		else if (cell.trim() === '') return;
-		else if (header?.trim()) row.fields.push({ label: header.trim(), value: cell });
+		else if (name) row.fields.push({ label: name, value: cell });
 		else extraNotes.push(cell.trim());
 	});
 
@@ -119,7 +159,9 @@ function toRow(cells: string[], headers: string[] | undefined, line: number): Im
 
 	if (row.title === '') row.problem = 'Missing title';
 	else if (row.password === '') row.problem = 'Missing password';
-	else if (urlProblem) row.problem = urlProblem;
+	else if ([row.title, row.username, row.password].some(spansCells)) {
+		row.problem = 'Several cells or lines ended up in one: check the quotes in this row';
+	} else if (urlProblem) row.problem = urlProblem;
 	return row;
 }
 
@@ -129,9 +171,9 @@ export function parseImport(text: string): ImportPreview {
 
 	const firstRow = table[0] ?? [];
 	const hasHeader = firstRow.some((cell) => coreColumnOf(cell) === 'password');
-	const headers = hasHeader ? firstRow : undefined;
+	const header = hasHeader ? { names: firstRow, columns: assignColumns(firstRow) } : undefined;
 	const dataRows = hasHeader ? table.slice(1) : table;
-	const rows = dataRows.map((cells, index) => toRow(cells, headers, index + (hasHeader ? 2 : 1)));
+	const rows = dataRows.map((cells, index) => toRow(cells, header, index + (hasHeader ? 2 : 1)));
 
 	if (rows.length > MAX_IMPORT_ROWS) {
 		return {

@@ -17,6 +17,38 @@ describe('parseDelimited', () => {
 		]);
 	});
 
+	it('treats a leading quote in a pasted table as a character, not as CSV quoting', () => {
+		const text = [
+			'Bank\tbank.example\tjo\t"x9!k\task Jo',
+			'Mail\tmail.example\tann\thunter2\t',
+			'Wiki\twiki.example\t"\tpw3\tsay "hello" first',
+			'Shop\tshop.example\t"\t"abc"\t'
+		].join('\n');
+
+		expect(parseDelimited(text, '\t')).toEqual([
+			['Bank', 'bank.example', 'jo', '"x9!k', 'ask Jo'],
+			['Mail', 'mail.example', 'ann', 'hunter2', ''],
+			['Wiki', 'wiki.example', '"', 'pw3', 'say "hello" first'],
+			['Shop', 'shop.example', '"', '"abc"', '']
+		]);
+	});
+
+	it('still reads a multi-line cell the way a spreadsheet copies it', () => {
+		const text = 'Bank\tjo\tpw1\t"line one\nsay ""hi"""\nMail\tann\tpw2\t';
+
+		expect(parseDelimited(text, '\t')).toEqual([
+			['Bank', 'jo', 'pw1', 'line one\nsay "hi"'],
+			['Mail', 'ann', 'pw2', '']
+		]);
+	});
+
+	it('keeps an unterminated quote in a CSV as a character', () => {
+		expect(parseDelimited('Bank,"x9!k\nMail,pw2', ',')).toEqual([
+			['Bank', '"x9!k'],
+			['Mail', 'pw2']
+		]);
+	});
+
 	it('handles Windows line endings and skips blank lines', () => {
 		expect(parseDelimited('a\tb\r\n\r\nc\td\r\n', '\t')).toEqual([
 			['a', 'b'],
@@ -72,6 +104,42 @@ describe('parseImport', () => {
 			fields: [{ label: 'PIN', value: '4321' }]
 		});
 		expect(preview.rows[1]).toMatchObject({ line: 3, title: 'Mail', fields: [] });
+	});
+
+	it('gives a column to the first header naming it and keeps the others as fields', () => {
+		const [english] = parseImport(
+			'Name\tSite\tLogin\tEmail\tPassword\nOVH hosting\tovh.com\tadmin-asso\t\tpw1'
+		).rows;
+		const [french, both] = parseImport(
+			[
+				'Nom;Site;Identifiant;E-mail;Mot de passe',
+				'Banque;banque.example;12345678;;s3cret',
+				'Mail;mail.example;newsletter;contact@asso.example;pw2'
+			].join('\n')
+		).rows;
+
+		expect(english).toMatchObject({
+			title: 'OVH hosting',
+			url: 'https://ovh.com',
+			username: 'admin-asso',
+			fields: []
+		});
+		expect(french).toMatchObject({
+			title: 'Banque',
+			url: 'https://banque.example',
+			username: '12345678',
+			fields: []
+		});
+		expect(both).toMatchObject({
+			username: 'newsletter',
+			fields: [{ label: 'E-mail', value: 'contact@asso.example' }]
+		});
+	});
+
+	it('refuses a row in which a quoted cell swallowed the next line', () => {
+		const [merged] = parseImport('Bank,jo,"pw1\nMail",ann\nWiki,bob,pw3').rows;
+
+		expect(merged?.problem).toContain('Several cells or lines');
 	});
 
 	it('flags the rows that cannot be imported and keeps the others', () => {

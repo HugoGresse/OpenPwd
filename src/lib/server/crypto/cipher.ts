@@ -11,6 +11,8 @@ export class CipherError extends Error {
 }
 
 export interface SecretCipher {
+	/** The KMS key behind this cipher, stored with what it encrypts. Null for the local stand-in. */
+	readonly keyName: string | null;
 	encrypt(plaintext: Uint8Array, aad: string): Promise<string>;
 	decrypt(ciphertext: string, aad: string): Promise<Uint8Array>;
 }

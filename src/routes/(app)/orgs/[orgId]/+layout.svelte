@@ -41,4 +41,8 @@
 	{/each}
 </nav>
 
-{@render children()}
+<!-- Kit reuses a page component when only its parameters change. A fresh one per address keeps
+     an unlocked note or a revealed password from following the member to another entry. -->
+{#key page.url.pathname}
+	{@render children()}
+{/key}

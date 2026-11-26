@@ -18,9 +18,10 @@ SvelteKit + TypeScript, Supabase (Postgres, Auth), Google Cloud KMS.
   row-level security applies to every query, and API roles can only read: all writes go
   through audited SQL functions.
 - **Sessions**: the database only honours a token whose session still exists, was opened
-  through Google, and is younger than `max_session_minutes` (2 hours by default). Signing out cuts access at once, and an
-  account removed from the Workspace loses everything within that window, because it can no
-  longer pass the hourly Google sign-in that creates a fresh session.
+  through Google, and is younger than `max_session_minutes` (2 hours by default). Signing out
+  ends every session of the member at once, on every device, and an account removed from the
+  Workspace loses everything within that window, because it can no longer pass the hourly
+  Google sign-in that creates a fresh session.
 
 What this does **not** protect against:
 
@@ -160,4 +161,14 @@ passwords it contained: everyone who could open the document still knows them.
 
 An organization can point at its own KMS key (`organizations.kms_key_name`, set in SQL); by
 default all organizations share `KMS_KEY_NAME`, and separation between them is enforced by the
-database.
+database. Each entry records the key that encrypted it and keeps it when edited, so changing
+either setting only applies to entries created afterwards. The exception is an entry written
+on the default key before this was recorded: it follows `KMS_KEY_NAME` until its next edit.
+Never delete a key that still has entries.
+
+### Removing someone
+
+Remove the person from each organization on its Members page first. Deleting an account in
+Supabase Auth is refused while it is still a member, so that no organization loses its last
+owner, or a member, without a line in the audit log. A sole owner cannot be removed: promote
+another member to owner first.

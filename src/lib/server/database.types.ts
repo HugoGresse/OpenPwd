@@ -45,14 +45,14 @@ isOneToOne: false
                   ]
                 },"entries": {
                   Row: {
-                    "created_at": string,"created_by": string | null,"field_labels": (string)[],"has_note": boolean,"id": string,"last_accessed_at": string | null,"last_accessed_by": string | null,"org_id": string,"secret_ciphertext": string,"secret_version": number,"title": string,"updated_at": string,"updated_by": string | null,"url": string | null,"username": string | null
+                    "created_at": string,"created_by": string | null,"field_labels": (string)[],"has_note": boolean,"id": string,"kms_key_name": string | null,"last_accessed_at": string | null,"last_accessed_by": string | null,"org_id": string,"secret_ciphertext": string,"secret_version": number,"title": string,"updated_at": string,"updated_by": string | null,"url": string | null,"username": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"created_by"?: string | null,"field_labels"?: (string)[],"has_note"?: boolean,"id": string,"last_accessed_at"?: string | null,"last_accessed_by"?: string | null,"org_id": string,"secret_ciphertext": string,"secret_version"?: number,"title": string,"updated_at"?: string,"updated_by"?: string | null,"url"?: string | null,"username"?: string | null
+                    "created_at"?: string,"created_by"?: string | null,"field_labels"?: (string)[],"has_note"?: boolean,"id": string,"kms_key_name"?: string | null,"last_accessed_at"?: string | null,"last_accessed_by"?: string | null,"org_id": string,"secret_ciphertext": string,"secret_version"?: number,"title": string,"updated_at"?: string,"updated_by"?: string | null,"url"?: string | null,"username"?: string | null
                   }
                   Update: {
-                    "created_at"?: string,"created_by"?: string | null,"field_labels"?: (string)[],"has_note"?: boolean,"id"?: string,"last_accessed_at"?: string | null,"last_accessed_by"?: string | null,"org_id"?: string,"secret_ciphertext"?: string,"secret_version"?: number,"title"?: string,"updated_at"?: string,"updated_by"?: string | null,"url"?: string | null,"username"?: string | null
+                    "created_at"?: string,"created_by"?: string | null,"field_labels"?: (string)[],"has_note"?: boolean,"id"?: string,"kms_key_name"?: string | null,"last_accessed_at"?: string | null,"last_accessed_by"?: string | null,"org_id"?: string,"secret_ciphertext"?: string,"secret_version"?: number,"title"?: string,"updated_at"?: string,"updated_by"?: string | null,"url"?: string | null,"username"?: string | null
                   }
                   Relationships: [
                     {
@@ -83,14 +83,14 @@ isOneToOne: false
                   ]
                 },"entry_versions": {
                   Row: {
-                    "entry_id": string,"replaced_at": string,"replaced_by": string | null,"secret_ciphertext": string,"secret_version": number
+                    "entry_id": string,"kms_key_name": string | null,"replaced_at": string,"replaced_by": string | null,"secret_ciphertext": string,"secret_version": number
                   }
                   ComputedFields: never
                   Insert: {
-                    "entry_id": string,"replaced_at"?: string,"replaced_by"?: string | null,"secret_ciphertext": string,"secret_version": number
+                    "entry_id": string,"kms_key_name"?: string | null,"replaced_at"?: string,"replaced_by"?: string | null,"secret_ciphertext": string,"secret_version": number
                   }
                   Update: {
-                    "entry_id"?: string,"replaced_at"?: string,"replaced_by"?: string | null,"secret_ciphertext"?: string,"secret_version"?: number
+                    "entry_id"?: string,"kms_key_name"?: string | null,"replaced_at"?: string,"replaced_by"?: string | null,"secret_ciphertext"?: string,"secret_version"?: number
                   }
                   Relationships: [
                     {
@@ -209,7 +209,7 @@ isOneToOne: false
 { Args: { "p_email": string,"p_org_id": string,"p_role": Database["public"]['Enums']["org_role"] }; Returns: string
                            },
 "create_entry":
-{ Args: { "p_ciphertext": string,"p_entry_id": string,"p_field_labels": (string)[],"p_has_note": boolean,"p_org_id": string,"p_title": string,"p_url": string,"p_username": string }; Returns: undefined
+{ Args: { "p_ciphertext": string,"p_entry_id": string,"p_field_labels": (string)[],"p_has_note": boolean,"p_key_name"?: string,"p_org_id": string,"p_title": string,"p_url": string,"p_username": string }; Returns: undefined
                            },
 "create_organization":
 { Args: { "p_name": string }; Returns: string
@@ -234,11 +234,14 @@ isOneToOne: false
               "ciphertext": string,"key_name": string,"version": number
             }[]
                            },
+"session_is_current":
+{ Args: Record<PropertyKey, never>; Returns: boolean
+                           },
 "set_member_role":
 { Args: { "p_org_id": string,"p_role": Database["public"]['Enums']["org_role"],"p_user_id": string }; Returns: undefined
                            },
 "update_entry":
-{ Args: { "p_ciphertext": string,"p_entry_id": string,"p_field_labels": (string)[],"p_has_note": boolean,"p_secret_version": number,"p_title": string,"p_url": string,"p_username": string }; Returns: undefined
+{ Args: { "p_ciphertext": string,"p_entry_id": string,"p_field_labels": (string)[],"p_has_note": boolean,"p_key_name"?: string,"p_secret_version": number,"p_title": string,"p_url": string,"p_username": string }; Returns: undefined
                            }
           }
           Enums: {

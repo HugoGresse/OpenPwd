@@ -1,14 +1,17 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { clearClipboardNow } from '#lib/clipboard.ts';
 	import type { LayoutProps } from './$types';
 
 	let { data, children }: LayoutProps = $props();
 </script>
 
+<svelte:window onpagehide={clearClipboardNow} />
+
 <header class="topbar">
 	<div class="inner spread">
 		<a class="brand" href={resolve('/(app)')}>OpenPwd</a>
-		<form method="POST" action="/auth/logout" class="row">
+		<form method="POST" action="/auth/logout" class="row" onsubmit={clearClipboardNow}>
 			<span class="muted">{data.user.email}</span>
 			<button class="btn btn-small">Sign out</button>
 		</form>

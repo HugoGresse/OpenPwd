@@ -61,6 +61,8 @@ async function callKms(
 
 export function createGoogleKmsCipher(options: GoogleKmsOptions): SecretCipher {
 	return {
+		keyName: options.keyName,
+
 		async encrypt(plaintext, aad) {
 			const body = await callKms(options, 'encrypt', {
 				plaintext: toBase64(plaintext),

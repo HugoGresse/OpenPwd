@@ -67,7 +67,7 @@
 
 	<SecretRow entryId={entry.id} field="password" label="Password" />
 	{#each entry.field_labels as label, index (index)}
-		<SecretRow entryId={entry.id} field="field:{index}" {label} />
+		<SecretRow entryId={entry.id} field="field:{index}" {label} multiline />
 	{/each}
 	{#if entry.has_note}
 		<SecretRow entryId={entry.id} field="note" label="Note" multiline />

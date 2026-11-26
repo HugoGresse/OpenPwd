@@ -30,6 +30,14 @@
 
 	let { mode, cancelHref, error, existing }: Props = $props();
 
+	// Bound state, not plain `value` attributes: Svelte rewrites those after hydration and when a
+	// submit fails, which erased what was typed.
+	// svelte-ignore state_referenced_locally
+	let title = $state(existing?.title ?? '');
+	// svelte-ignore state_referenced_locally
+	let url = $state(existing?.url ?? '');
+	// svelte-ignore state_referenced_locally
+	let username = $state(existing?.username ?? '');
 	let password = $state('');
 	let passwordVisible = $state(false);
 	// svelte-ignore state_referenced_locally
@@ -99,21 +107,15 @@
 
 	<label>
 		Title
-		<input name="title" required maxlength="120" value={existing?.title ?? ''} />
+		<input name="title" required maxlength="120" bind:value={title} />
 	</label>
 	<label>
 		Website
-		<input
-			name="url"
-			type="url"
-			maxlength="2048"
-			placeholder="https://"
-			value={existing?.url ?? ''}
-		/>
+		<input name="url" type="url" maxlength="2048" placeholder="https://" bind:value={url} />
 	</label>
 	<label>
 		Username
-		<input name="username" maxlength="320" autocomplete="off" value={existing?.username ?? ''} />
+		<input name="username" maxlength="320" autocomplete="off" bind:value={username} />
 	</label>
 
 	<div class="stack tight">
@@ -154,17 +156,20 @@
 						name="fieldLabel"
 						aria-label="Field name"
 						placeholder="Name, e.g. PIN"
+						required
 						maxlength="60"
 						bind:value={field.label}
 					/>
-					<input
+					<!-- A textarea: a single-line input drops the line breaks of a key or a list of codes. -->
+					<textarea
 						name="fieldValue"
 						aria-label="Field value"
 						placeholder="Value"
+						rows="1"
 						maxlength="4000"
 						autocomplete="off"
-						bind:value={field.value}
-					/>
+						spellcheck="false"
+						bind:value={field.value}></textarea>
 					<button
 						type="button"
 						class="btn btn-small btn-danger"
@@ -241,7 +246,13 @@
 	.field-row {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+		align-items: start;
 		gap: 8px;
+	}
+
+	.field-row textarea {
+		min-height: 40px;
+		resize: vertical;
 	}
 
 	.locked {

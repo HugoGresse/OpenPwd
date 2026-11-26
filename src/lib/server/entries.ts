@@ -16,7 +16,8 @@ import type { AppSupabaseClient } from './supabase';
 
 export interface EntryServices {
 	supabase: AppSupabaseClient;
-	cipherFor: (organizationKeyName: string | null) => Promise<SecretCipher>;
+	/** A null key name means the deployment's default key. */
+	cipherFor: (keyName: string | null) => Promise<SecretCipher>;
 }
 
 const text = (max: number) => v.pipe(v.string(), v.trim(), v.maxLength(max));
@@ -28,7 +29,12 @@ export const entryInputSchema = v.object({
 	password: v.pipe(v.string(), v.maxLength(1000)),
 	note: v.pipe(v.string(), v.maxLength(10_000)),
 	fields: v.pipe(
-		v.array(v.object({ label: text(60), value: v.pipe(v.string(), v.maxLength(4000)) })),
+		v.array(
+			v.object({
+				label: v.pipe(text(60), v.minLength(1, 'Every secret field needs a name.')),
+				value: v.pipe(v.string(), v.maxLength(4000))
+			})
+		),
 		v.maxLength(30)
 	)
 });
@@ -46,7 +52,8 @@ export function readEntryForm(form: FormData): unknown {
 		note: formText(form, 'note'),
 		fields: labels
 			.map((label, index) => ({ label, value: values[index] ?? '' }))
-			.filter((field) => field.label.trim() !== '')
+			// Only a fully empty row is dropped: a value without a name must be refused, not lost.
+			.filter((field) => field.label.trim() !== '' || field.value !== '')
 	};
 }
 
@@ -84,7 +91,8 @@ export async function createEntry(
 		p_username: input.username,
 		p_field_labels: fieldLabelsOf(blob),
 		p_has_note: blob.note !== '',
-		p_ciphertext: ciphertext
+		p_ciphertext: ciphertext,
+		p_key_name: cipher.keyName ?? undefined
 	});
 	if (error) throw error;
 	return entryId;
@@ -163,6 +171,7 @@ export async function updateEntry(
 		fields: replaceSecrets ? input.fields : current.blob.fields
 	};
 	const nextVersion = current.version + 1;
+	// The key the entry was read with: changing an organization's key applies to new entries.
 	const cipher = await services.cipherFor(current.keyName);
 	const ciphertext = await cipher.encrypt(serializeBlob(blob), buildAad(entryId, nextVersion));
 
@@ -174,7 +183,8 @@ export async function updateEntry(
 		p_field_labels: fieldLabelsOf(blob),
 		p_has_note: blob.note !== '',
 		p_ciphertext: ciphertext,
-		p_secret_version: nextVersion
+		p_secret_version: nextVersion,
+		p_key_name: cipher.keyName ?? undefined
 	});
 	if (error) throw error;
 }

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(37);
+select plan(46);
 
 insert into private.instance_settings (key, value)
 values
@@ -134,6 +134,81 @@ select isnt(
     null,
     'a reveal records the last access'
 );
+
+select lives_ok(
+    $$
+        select public.create_entry(
+            '00000000-0000-0000-0000-0000000000e8',
+            (select org_id from ctx),
+            'Keyed', '', '', '{}', false, 'cipher-keyed',
+            'projects/p/locations/l/keyRings/r/cryptoKeys/first'
+        )
+    $$,
+    'an entry can record the KMS key that encrypted it'
+);
+
+-- Only the database owner can point an organization at another key.
+select set_config('role', 'postgres', true);
+update public.organizations
+set kms_key_name = 'projects/p/locations/l/keyRings/r/cryptoKeys/second'
+where id = (select org_id from ctx);
+select set_config('role', 'authenticated', true);
+
+select is(
+    (
+        select key_name
+        from public.reveal_entry('00000000-0000-0000-0000-0000000000e8', 'secret.view', 'password')
+    ),
+    'projects/p/locations/l/keyRings/r/cryptoKeys/first',
+    'an entry keeps its own key when the organization is pointed at another one'
+);
+
+select is(
+    (
+        select key_name
+        from public.reveal_entry('00000000-0000-0000-0000-0000000000e1', 'secret.view', 'password')
+    ),
+    'projects/p/locations/l/keyRings/r/cryptoKeys/second',
+    'an entry without a recorded key follows the organization'
+);
+
+select lives_ok(
+    $$
+        select public.update_entry(
+            '00000000-0000-0000-0000-0000000000e8', 'Keyed', '', '', '{}', false, 'cipher-keyed-2', 2
+        )
+    $$,
+    'an entry can be updated without naming a key'
+);
+
+select is(
+    (
+        select key_name
+        from public.reveal_entry('00000000-0000-0000-0000-0000000000e8', 'secret.view', 'password')
+    ),
+    'projects/p/locations/l/keyRings/r/cryptoKeys/first',
+    'an update that names no key keeps the recorded one'
+);
+
+select throws_ok(
+    $$
+        select public.create_entry(
+            '00000000-0000-0000-0000-0000000000e9',
+            (select org_id from ctx), 'Bad key', '', '', '{}', false, 'c', 'https://evil.example/key'
+        )
+    $$,
+    '23514',
+    null,
+    'a key name that is not a Cloud KMS key is refused'
+);
+
+select set_config('role', 'postgres', true);
+update public.organizations
+set kms_key_name = null
+where id = (select org_id from ctx);
+select set_config('role', 'authenticated', true);
+
+select public.delete_entry('00000000-0000-0000-0000-0000000000e8');
 
 select throws_ok(
     $$select * from public.reveal_entry('00000000-0000-0000-0000-0000000000e1', 'entry.delete', 'x')$$,
@@ -323,15 +398,30 @@ select throws_ok(
     'a session older than the limit cannot create an organization'
 );
 
-select pg_temp.act_as_admin();
+select pg_temp.act_as('00000000-0000-0000-0000-00000000000a');
+
+select is(
+    public.session_is_current(),
+    true,
+    'a live session is reported as current'
+);
+
+-- The token is kept: only the session behind it goes away, as a sign-out does.
+select set_config('role', 'postgres', true);
 delete from auth.sessions
-where user_id = '00000000-0000-0000-0000-00000000000a';
+where id = (current_setting('request.jwt.claims', true)::jsonb ->> 'session_id')::uuid;
 select set_config('role', 'authenticated', true);
 
 select is(
     (select count(*)::integer from public.entries),
     0,
     'a token whose session was signed out sees nothing, even before the token expires'
+);
+
+select is(
+    public.session_is_current(),
+    false,
+    'a signed-out session is reported as no longer current'
 );
 
 select pg_temp.act_as_admin();
@@ -365,6 +455,13 @@ select is(
     ),
     'admin',
     'an invite is claimed with its role at first sign-in'
+);
+
+select throws_ok(
+    $$delete from auth.users where id = '00000000-0000-0000-0000-00000000000a'$$,
+    '23503',
+    null,
+    'an Auth user who is still a member cannot be deleted behind the membership functions'
 );
 
 select throws_ok(

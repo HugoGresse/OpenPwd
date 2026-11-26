@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
+	import { CLIPBOARD_EXPOSURE_MS, scheduleClipboardClear } from '#lib/clipboard.ts';
 
 	interface Props {
 		entryId: string;
@@ -9,7 +10,7 @@
 		multiline?: boolean;
 	}
 
-	const EXPOSURE_MS = 30_000;
+	const EXPOSURE_MS = CLIPBOARD_EXPOSURE_MS;
 
 	let { entryId, field, label, multiline = false }: Props = $props();
 
@@ -17,7 +18,7 @@
 	let status = $state<{ kind: 'ok' | 'error'; text: string }>();
 	let busy = $state(false);
 	let hideTimer: ReturnType<typeof setTimeout> | undefined;
-	let clipboardTimer: ReturnType<typeof setTimeout> | undefined;
+	let statusTimer: ReturnType<typeof setTimeout> | undefined;
 
 	async function requestSecret(purpose: 'view' | 'copy'): Promise<string | undefined> {
 		busy = true;
@@ -84,17 +85,18 @@
 			status ??= { kind: 'error', text: 'The browser refused clipboard access.' };
 			return;
 		}
-		status = { kind: 'ok', text: 'Copied. Clipboard is cleared in 30 seconds.' };
-		clearTimeout(clipboardTimer);
-		clipboardTimer = setTimeout(() => {
-			void navigator.clipboard.writeText('').catch(() => undefined);
-			status = undefined;
-		}, EXPOSURE_MS);
+		scheduleClipboardClear();
+		status = {
+			kind: 'ok',
+			text: 'Copied. The clipboard is emptied after 30 seconds, once this tab is in front.'
+		};
+		clearTimeout(statusTimer);
+		statusTimer = setTimeout(() => (status = undefined), EXPOSURE_MS);
 	}
 
 	onDestroy(() => {
 		clearTimeout(hideTimer);
-		clearTimeout(clipboardTimer);
+		clearTimeout(statusTimer);
 	});
 </script>
 

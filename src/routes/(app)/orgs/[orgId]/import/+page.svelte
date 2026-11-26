@@ -65,6 +65,10 @@
 	{/if}
 
 	{#if preview.rows.length > 0}
+		<p class="muted">
+			{preview.rows.length}
+			{preview.rows.length === 1 ? 'row' : 'rows'} found. Check that this matches your table.
+		</p>
 		<div class="table-wrap">
 			<table>
 				<thead>
