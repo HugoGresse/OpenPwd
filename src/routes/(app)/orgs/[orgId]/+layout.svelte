@@ -14,9 +14,11 @@
 	const visibleSections = $derived(
 		sections.filter((section) => data.canManage || !section.managersOnly)
 	);
+	const passwordRoutes = [`${sections[0].route}/entries`, `${sections[0].route}/import`];
 	const isCurrent = (route: string) =>
 		page.route.id === route ||
-		(route === sections[0].route && page.route.id?.startsWith(`${route}/entries`) === true);
+		(route === sections[0].route &&
+			passwordRoutes.some((prefix) => page.route.id?.startsWith(prefix) === true));
 </script>
 
 <div class="spread">
