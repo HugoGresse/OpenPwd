@@ -6,7 +6,8 @@ const USERINFO_ENDPOINT = 'https://openidconnect.googleapis.com/v1/userinfo';
 /** Google access tokens live one hour. Expiring the cookie first forces a clean re-sign-in. */
 const TOKEN_LIFETIME_SECONDS = 55 * 60;
 
-export const KMS_SCOPE = 'https://www.googleapis.com/auth/cloudkms';
+/** `openid` makes Google return an ID token, which is where Supabase reads the `hd` claim. */
+export const GOOGLE_SCOPES = 'openid https://www.googleapis.com/auth/cloudkms';
 
 export const readGoogleToken = (cookies: Cookies): string | undefined => cookies.get(COOKIE_NAME);
 
@@ -22,12 +23,40 @@ export interface GoogleIdentity {
 	hd?: string;
 }
 
+export interface LinkedIdentity {
+	provider: string;
+	identity_data?: Record<string, unknown> | null;
+}
+
+const hostedDomainOf = (identity: LinkedIdentity): string | undefined => {
+	const claims = identity.identity_data?.custom_claims;
+	const hd = typeof claims === 'object' && claims !== null ? (claims as { hd?: unknown }).hd : '';
+	return typeof hd === 'string' ? hd.toLowerCase() : undefined;
+};
+
 /**
- * `hd` is only present for Google Workspace accounts. Checking the email domain alone would
- * let in a personal Google account registered on a company address.
+ * `hd` only exists for Google Workspace accounts: checking the email domain alone would let in
+ * a personal Google account registered on a company address.
+ *
+ * The authoritative source is the `hd` claim of the ID token, which Supabase verifies and
+ * stores on the identity (not in the user-editable metadata). Every linked Google identity
+ * must carry it, so a second, personal Google account linked to the same email is refused.
+ * The userinfo answer is a second opinion on the account that just signed in: it can veto,
+ * never approve.
  */
-export const belongsToWorkspace = (identity: GoogleIdentity, domain: string): boolean =>
-	identity.email_verified === true && identity.hd?.toLowerCase() === domain.toLowerCase();
+export function isWorkspaceSignIn(
+	identities: readonly LinkedIdentity[],
+	userinfo: GoogleIdentity | undefined,
+	domain: string
+): boolean {
+	const expected = domain.toLowerCase();
+	const google = identities.filter((identity) => identity.provider === 'google');
+	if (google.length === 0) return false;
+	if (google.some((identity) => hostedDomainOf(identity) !== expected)) return false;
+	if (!userinfo) return true;
+	if (userinfo.email_verified === false) return false;
+	return userinfo.hd === undefined || userinfo.hd.toLowerCase() === expected;
+}
 
 export async function fetchGoogleIdentity(
 	fetch: typeof globalThis.fetch,

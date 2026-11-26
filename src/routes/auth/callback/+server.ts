@@ -1,8 +1,8 @@
 import { redirect } from '@sveltejs/kit';
 import {
-	belongsToWorkspace,
 	clearGoogleToken,
 	fetchGoogleIdentity,
+	isWorkspaceSignIn,
 	safeNextPath,
 	storeGoogleToken
 } from '#lib/server/google-session.ts';
@@ -17,8 +17,10 @@ export const GET: RequestHandler = async ({ locals, url, cookies }) => {
 	const googleToken = data.session?.provider_token;
 	if (error || !googleToken) redirect(303, '/login?error=signin');
 
-	const identity = await fetchGoogleIdentity(globalThis.fetch, googleToken);
-	if (!identity || !belongsToWorkspace(identity, settings.allowedGoogleDomain)) {
+	const identities =
+		data.user?.identities ?? (await locals.supabase.auth.getUserIdentities()).data?.identities;
+	const userinfo = await fetchGoogleIdentity(globalThis.fetch, googleToken);
+	if (!isWorkspaceSignIn(identities ?? [], userinfo, settings.allowedGoogleDomain)) {
 		await locals.supabase.auth.signOut();
 		clearGoogleToken(cookies);
 		redirect(303, '/login?error=workspace');

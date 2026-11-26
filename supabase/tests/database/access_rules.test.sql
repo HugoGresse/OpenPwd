@@ -2,16 +2,29 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(24);
+select plan(30);
 
-create function pg_temp.act_as(p_user_id uuid)
+insert into private.instance_settings (key, value)
+values ('max_session_minutes', '120')
+on conflict (key) do update set value = excluded.value;
+
+-- Acts as a member holding a session of the given age (minutes).
+create function pg_temp.act_as(p_user_id uuid, p_session_age integer default 1)
 returns void
 language plpgsql
 as $$
+declare
+    v_session_id uuid := gen_random_uuid();
 begin
+    perform set_config('role', 'postgres', true);
+    insert into auth.sessions (id, user_id, created_at)
+    values (v_session_id, p_user_id, now() - make_interval(mins => p_session_age));
+
     perform set_config('role', 'authenticated', true);
     perform set_config(
-        'request.jwt.claims', json_build_object('sub', p_user_id, 'role', 'authenticated')::text, true
+        'request.jwt.claims',
+        json_build_object('sub', p_user_id, 'role', 'authenticated', 'session_id', v_session_id)::text,
+        true
     );
 end;
 $$;
@@ -31,7 +44,7 @@ values
 ('00000000-0000-0000-0000-00000000000a', 'Alice@example.org', 'authenticated', 'authenticated'),
 ('00000000-0000-0000-0000-00000000000b', 'bob@example.org', 'authenticated', 'authenticated');
 
-grant execute on function pg_temp.act_as(uuid) to authenticated;
+grant execute on function pg_temp.act_as(uuid, integer) to authenticated;
 grant execute on function pg_temp.act_as_admin() to authenticated;
 
 select is(
@@ -221,7 +234,58 @@ select lives_ok(
     'an update with the next secret version is accepted'
 );
 
+select pg_temp.act_as('00000000-0000-0000-0000-00000000000a', 121);
+
+select is(
+    (select count(*)::integer from public.organizations),
+    0,
+    'a session older than the limit sees no organization'
+);
+
+select throws_ok(
+    $$select * from public.reveal_entry('00000000-0000-0000-0000-0000000000e1', 'secret.view', 'password')$$,
+    'P0002',
+    null,
+    'a session older than the limit cannot reveal an entry'
+);
+
+select throws_ok(
+    $$select public.create_organization('Stale')$$,
+    '42501',
+    null,
+    'a session older than the limit cannot create an organization'
+);
+
 select pg_temp.act_as_admin();
+delete from auth.sessions
+where user_id = '00000000-0000-0000-0000-00000000000a';
+select set_config('role', 'authenticated', true);
+
+select is(
+    (select count(*)::integer from public.entries),
+    0,
+    'a token whose session was signed out sees nothing, even before the token expires'
+);
+
+select pg_temp.act_as_admin();
+
+select is(
+    public.hook_before_user_created(
+        '{"user": {"email": "jo@example.org", "app_metadata": {"provider": "google"},
+          "user_metadata": {"custom_claims": {"hd": "example.org"}}}}'::jsonb
+    ),
+    '{}'::jsonb,
+    'the sign-up hook accepts a Workspace account of the allowed domain'
+);
+
+select is(
+    public.hook_before_user_created(
+        '{"user": {"email": "jo@example.org", "app_metadata": {"provider": "google"},
+          "user_metadata": {}}}'::jsonb
+    ) -> 'error' ->> 'http_code',
+    '403',
+    'the sign-up hook refuses a personal Google account on a company address'
+);
 
 insert into auth.users (id, email, aud, role)
 values ('00000000-0000-0000-0000-00000000000c', 'carol@example.org', 'authenticated', 'authenticated');

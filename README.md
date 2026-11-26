@@ -17,6 +17,10 @@ SvelteKit + TypeScript, Supabase (Postgres, Auth), Google Cloud KMS.
 - **Database**: the browser never talks to Supabase. The server acts as the member, so
   row-level security applies to every query, and API roles can only read: all writes go
   through audited SQL functions.
+- **Sessions**: the database only honours a token whose session still exists and is younger
+  than `max_session_minutes` (2 hours by default). Signing out cuts access at once, and an
+  account removed from the Workspace loses everything within that window, because it can no
+  longer pass the hourly Google sign-in that creates a fresh session.
 
 What this does **not** protect against:
 
@@ -73,6 +77,12 @@ gcloud kms keys add-iam-policy-binding vault --keyring openpwd --location europe
 ```
 
 4. Enable Data Access audit logs for Cloud KMS (IAM & Admin → Audit Logs).
+5. Keep the OAuth client and the key in the **same project**, with the Cloud KMS API enabled
+   there. Google does not document which project is billed for a call made with a member's
+   token; this is the arrangement to test first.
+6. In the Workspace admin console, check two settings that can block the flow: the session
+   length for Google Cloud services (forces re-authentication) and API controls (if Google
+   Cloud is restricted, mark internal apps as trusted).
 
 The application has no Google Cloud credentials of its own and must never be given any.
 
@@ -89,7 +99,10 @@ The application has no Google Cloud credentials of its own and must never be giv
 insert into private.instance_settings (key, value) values ('allowed_email_domain', '<domain>');
 ```
 
-6. Auth → Sessions: time-box sessions (12 hours) if the plan allows it.
+Notes on the Free plan: a project with low activity for 7 days is paused, and there are no
+backups. Session time-boxing in the dashboard is a paid feature; OpenPwd enforces its own
+limit in the database, adjustable with the `max_session_minutes` setting (same table as the
+allowed domain).
 
 ### 3. Deploy on Coolify
 
