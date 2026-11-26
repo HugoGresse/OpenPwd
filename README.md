@@ -124,6 +124,16 @@ stay compatible with the previous application version: add first, remove in a la
 GitHub Actions only checks: `quality` (linters, unit and database tests, build), `build`
 (image build and Trivy scan), `security` (weekly dependency and secret scan).
 
+## Importing existing passwords
+
+Each organization has an **Import** page: paste a table copied from a document or spreadsheet
+(or CSV text), check the preview, import. Columns in order are title, website, username,
+password, note; with a header row the order is free and any other column becomes a secret
+field. Nothing is written unless every row is valid.
+
+After importing, delete the source document including its version history, and change the
+passwords it contained: everyone who could open the document still knows them.
+
 ## Access model
 
 | Role   | Passwords   | Members                   | Audit log |
