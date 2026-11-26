@@ -15,7 +15,7 @@ permissions:
 
 env:
   # Must match the Bun that wrote bun.lock: an older Bun cannot read a newer lockfile.
-  BUN_VERSION: 1.4.2
+  BUN_VERSION: 1.4.5
   HADOLINT_VERSION: v2.15.1
   HADOLINT_SHA256: c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
   # Placeholders so that the build and type checks can validate the declared environment.
