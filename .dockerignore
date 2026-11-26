@@ -1,0 +1,13 @@
+.git/
+.github/
+.claude/
+.svelte-kit/
+.vscode/
+build/
+node_modules/
+supabase/
+test-results/
+*.log
+*.md
+.env
+.env.*

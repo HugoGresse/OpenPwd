@@ -1,0 +1,37 @@
+repos:
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 4.2.2
+    hooks:
+      - id: sqlfluff-lint
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.15.1
+    hooks:
+      - id: hadolint
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+  - repo: local
+    hooks:
+      - id: trivy-config
+        name: trivy config
+        entry: trivy config --exit-code 1 --quiet
+        language: system
+        files: (^|/)Dockerfile$
+      - id: prettier
+        name: prettier
+        entry: bunx prettier --check --ignore-unknown
+        language: system
+        types:
+          - text
+      - id: eslint
+        name: eslint
+        entry: bunx eslint --no-warn-ignored
+        language: system
+        files: \.(js|ts|svelte)$
+      - id: svelte-check
+        name: svelte-check
+        entry: bun run check
+        language: system
+        pass_filenames: false
+        files: \.(ts|svelte)$
