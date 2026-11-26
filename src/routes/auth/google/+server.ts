@@ -21,5 +21,5 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	});
 	if (signInError || !data.url) error(503, 'Google sign-in is unavailable.');
 
-	redirect(303, data.url);
+	redirect(303, data.url, { external: [settings.supabaseUrl] });
 };

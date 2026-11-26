@@ -28,6 +28,21 @@ describe('secret blob', () => {
 		expect(() => parseBlob(bytes)).toThrow();
 	});
 
+	it('never quotes the decrypted bytes in its error', () => {
+		const bytes = new TextEncoder().encode('hunter2-plaintext-that-is-not-json');
+		const message = (() => {
+			try {
+				parseBlob(bytes);
+				return '';
+			} catch (error) {
+				return String(error);
+			}
+		})();
+
+		expect(message).toContain('not a valid entry');
+		expect(message).not.toContain('hunter2');
+	});
+
 	it('refuses to serialise more fields than the database accepts', () => {
 		const fields = Array.from({ length: 31 }, (_, index) => ({ label: `f${index}`, value: '' }));
 		expect(() => serializeBlob({ ...blob, fields })).toThrow();

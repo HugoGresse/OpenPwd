@@ -8,32 +8,72 @@
 		value: string;
 	}
 
+	interface Secrets {
+		note: string;
+		fields: FieldValue[];
+	}
+
 	interface Props {
 		mode: 'create' | 'edit';
 		cancelHref: ResolvedPathname;
 		error?: string;
-		initial?: {
+		/** Edit mode only. The note and fields are not part of it: they are unlocked on demand. */
+		existing?: {
+			id: string;
 			title: string;
 			url: string;
 			username: string;
-			note: string;
-			fields: FieldValue[];
+			version: number;
+			hasSecrets: boolean;
 		};
 	}
 
-	let { mode, cancelHref, error, initial }: Props = $props();
+	let { mode, cancelHref, error, existing }: Props = $props();
 
 	let password = $state('');
 	let passwordVisible = $state(false);
 	// svelte-ignore state_referenced_locally
-	let fields = $state<FieldValue[]>(initial?.fields.map((field) => ({ ...field })) ?? []);
-	let saving = $state(false);
+	let secrets = $state<Secrets | undefined>(
+		existing?.hasSecrets ? undefined : { note: '', fields: [] }
+	);
+	let unlockError = $state<string>();
+	let busy = $state(false);
 
-	const addField = () => fields.push({ label: '', value: '' });
-	const removeField = (index: number) => fields.splice(index, 1);
 	function suggestPassword() {
 		password = generatePassword();
 		passwordVisible = true;
+	}
+
+	/** An explicit, audited request: opening or preloading the page never decrypts anything. */
+	async function unlockSecrets() {
+		if (!existing) return;
+		busy = true;
+		unlockError = undefined;
+		try {
+			const response = await fetch(`/api/entries/${existing.id}/reveals`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ purpose: 'edit' })
+			});
+			const body = (await response.json()) as Partial<Secrets> & {
+				version?: number;
+				code?: string;
+				message?: string;
+			};
+			if (body.code === 'reauth_required') {
+				window.location.assign(`/auth/google?next=${encodeURIComponent(window.location.pathname)}`);
+			} else if (!response.ok || !body.fields || body.note === undefined) {
+				unlockError = body.message ?? 'Could not open the note and fields.';
+			} else if (body.version !== existing.version) {
+				unlockError = 'Someone else changed this entry. Reload the page before editing.';
+			} else {
+				secrets = { note: body.note, fields: body.fields };
+			}
+		} catch {
+			unlockError = 'Network error. Nothing was opened.';
+		} finally {
+			busy = false;
+		}
 	}
 </script>
 
@@ -42,10 +82,10 @@
 	class="card stack"
 	autocomplete="off"
 	use:enhance={() => {
-		saving = true;
+		busy = true;
 		return async ({ update }) => {
 			await update({ reset: false });
-			saving = false;
+			busy = false;
 		};
 	}}
 >
@@ -53,9 +93,13 @@
 		<p class="alert" role="alert">{error}</p>
 	{/if}
 
+	{#if existing}
+		<input type="hidden" name="version" value={existing.version} />
+	{/if}
+
 	<label>
 		Title
-		<input name="title" required maxlength="120" value={initial?.title ?? ''} />
+		<input name="title" required maxlength="120" value={existing?.title ?? ''} />
 	</label>
 	<label>
 		Website
@@ -64,12 +108,12 @@
 			type="url"
 			maxlength="2048"
 			placeholder="https://"
-			value={initial?.url ?? ''}
+			value={existing?.url ?? ''}
 		/>
 	</label>
 	<label>
 		Username
-		<input name="username" maxlength="320" autocomplete="off" value={initial?.username ?? ''} />
+		<input name="username" maxlength="320" autocomplete="off" value={existing?.username ?? ''} />
 	</label>
 
 	<div class="stack tight">
@@ -99,49 +143,77 @@
 		</div>
 	</div>
 
-	<fieldset class="stack tight">
-		<legend>Other secret fields</legend>
-		{#each fields as field, index (index)}
-			<div class="field-row">
-				<input
-					name="fieldLabel"
-					aria-label="Field name"
-					placeholder="Name, e.g. PIN"
-					maxlength="60"
-					bind:value={field.label}
-				/>
-				<input
-					name="fieldValue"
-					aria-label="Field value"
-					placeholder="Value"
-					maxlength="4000"
-					autocomplete="off"
-					bind:value={field.value}
-				/>
-				<button type="button" class="btn btn-small btn-danger" onclick={() => removeField(index)}>
-					Remove
+	{#if secrets}
+		{@const unlocked = secrets}
+		<input type="hidden" name="secretsUnlocked" value="true" />
+		<fieldset class="stack tight">
+			<legend>Other secret fields</legend>
+			{#each unlocked.fields as field, index (index)}
+				<div class="field-row">
+					<input
+						name="fieldLabel"
+						aria-label="Field name"
+						placeholder="Name, e.g. PIN"
+						maxlength="60"
+						bind:value={field.label}
+					/>
+					<input
+						name="fieldValue"
+						aria-label="Field value"
+						placeholder="Value"
+						maxlength="4000"
+						autocomplete="off"
+						bind:value={field.value}
+					/>
+					<button
+						type="button"
+						class="btn btn-small btn-danger"
+						onclick={() => unlocked.fields.splice(index, 1)}
+					>
+						Remove
+					</button>
+				</div>
+			{/each}
+			<div>
+				<button
+					type="button"
+					class="btn btn-small btn-secondary"
+					disabled={unlocked.fields.length >= 30}
+					onclick={() => unlocked.fields.push({ label: '', value: '' })}
+				>
+					Add field
 				</button>
 			</div>
-		{/each}
-		<div>
-			<button
-				type="button"
-				class="btn btn-small btn-secondary"
-				disabled={fields.length >= 30}
-				onclick={addField}
-			>
-				Add field
-			</button>
-		</div>
-	</fieldset>
+		</fieldset>
 
-	<label>
-		Note
-		<textarea name="note" maxlength="10000">{initial?.note ?? ''}</textarea>
-	</label>
+		<label>
+			Note
+			<textarea name="note" maxlength="10000" bind:value={unlocked.note}></textarea>
+		</label>
+	{:else}
+		<div class="locked stack tight">
+			<p class="muted">
+				The note and the other secret fields stay as they are. Unlock them to change them; this is
+				recorded in the audit log.
+			</p>
+			{#if unlockError}
+				<p class="alert" role="alert">{unlockError}</p>
+			{/if}
+			<div>
+				<button
+					type="button"
+					class="btn btn-small btn-secondary"
+					disabled={busy}
+					onclick={unlockSecrets}
+				>
+					Unlock note and fields
+				</button>
+			</div>
+		</div>
+	{/if}
 
 	<div class="row">
-		<button class="btn btn-primary" disabled={saving}>
+		<button class="btn btn-primary" disabled={busy}>
 			{mode === 'create' ? 'Save password' : 'Save changes'}
 		</button>
 		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved by the caller -->
@@ -170,6 +242,12 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
 		gap: 8px;
+	}
+
+	.locked {
+		padding: 16px;
+		border: 1px dashed var(--border-hover);
+		border-radius: 4px;
 	}
 
 	@media (max-width: 639px) {

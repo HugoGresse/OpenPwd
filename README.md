@@ -17,8 +17,8 @@ SvelteKit + TypeScript, Supabase (Postgres, Auth), Google Cloud KMS.
 - **Database**: the browser never talks to Supabase. The server acts as the member, so
   row-level security applies to every query, and API roles can only read: all writes go
   through audited SQL functions.
-- **Sessions**: the database only honours a token whose session still exists and is younger
-  than `max_session_minutes` (2 hours by default). Signing out cuts access at once, and an
+- **Sessions**: the database only honours a token whose session still exists, was opened
+  through Google, and is younger than `max_session_minutes` (2 hours by default). Signing out cuts access at once, and an
   account removed from the Workspace loses everything within that window, because it can no
   longer pass the hourly Google sign-in that creates a fresh session.
 
@@ -29,6 +29,9 @@ What this does **not** protect against:
   the database on its own.
 - A hijacked Google account sees what that member could see. Enforce 2-step verification in
   the Workspace admin console.
+- The audit log proves that an entry's secrets were released to a member, not which field
+  they looked at: the field named in a log line is what the app asked for, and a member
+  calling the API directly could ask for the whole entry under any label.
 - Anyone with direct database ownership can disable the audit trigger. Cloud KMS Data Access
   logs are the independent record of decryptions.
 

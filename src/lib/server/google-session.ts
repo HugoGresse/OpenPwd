@@ -70,7 +70,11 @@ export async function fetchGoogleIdentity(
 	return (await response.json()) as GoogleIdentity;
 }
 
+const NEXT_BASE = 'https://openpwd.invalid';
+
 export function safeNextPath(next: string | null): string {
 	if (!next?.startsWith('/') || next.startsWith('//') || next.includes('\\')) return '/';
-	return next;
+	if (!URL.canParse(next, NEXT_BASE) || new URL(next, NEXT_BASE).origin !== NEXT_BASE) return '/';
+	// eslint-disable-next-line no-control-regex -- control characters are exactly what is refused
+	return /[\u0000-\u001f]|%0[0-9a-f]|%1[0-9a-f]/i.test(next) ? '/' : next;
 }

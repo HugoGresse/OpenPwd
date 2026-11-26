@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { CipherError } from './cipher';
 
 const fieldSchema = v.object({
 	label: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(60)),
@@ -23,8 +24,14 @@ export const buildAad = (entryId: string, version: number): string =>
 export const serializeBlob = (blob: SecretBlob): Uint8Array =>
 	new TextEncoder().encode(JSON.stringify(v.parse(blobSchema, blob)));
 
-export const parseBlob = (bytes: Uint8Array): SecretBlob =>
-	v.parse(blobSchema, JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)));
+/** Parser errors quote their input: they are swallowed so that no plaintext reaches a log. */
+export function parseBlob(bytes: Uint8Array): SecretBlob {
+	try {
+		return v.parse(blobSchema, JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)));
+	} catch {
+		throw new CipherError('corrupt', 'Decrypted secret is not a valid entry');
+	}
+}
 
 export function parseSelector(raw: string): SecretSelector | undefined {
 	if (raw === 'password' || raw === 'note') return { kind: raw };

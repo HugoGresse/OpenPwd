@@ -128,22 +128,40 @@ export async function revealSecret(
 	return selectSecret(blob, selector);
 }
 
+export interface EditableSecrets extends Pick<SecretBlob, 'note' | 'fields'> {
+	version: number;
+}
+
 export async function loadSecretsForEdit(
 	services: EntryServices,
 	entryId: string
-): Promise<Pick<SecretBlob, 'note' | 'fields'>> {
-	const { blob } = await openSecret(services, entryId, 'secret.edit', 'note and fields');
-	return { note: blob.note, fields: blob.fields };
+): Promise<EditableSecrets> {
+	const opened = await openSecret(services, entryId, 'secret.edit', 'note and fields');
+	return { note: opened.blob.note, fields: opened.blob.fields, version: opened.version };
+}
+
+export interface EntryUpdate {
+	input: EntryInput;
+	/** The secret version the form was opened on: a later change by someone else is a conflict. */
+	expectedVersion: number;
+	/** False while the note and fields were never unlocked in the form: they are kept as stored. */
+	replaceSecrets: boolean;
 }
 
 /** An empty password in the form means "keep the current one": it is never sent to the browser. */
 export async function updateEntry(
 	services: EntryServices,
 	entryId: string,
-	input: EntryInput
+	{ input, expectedVersion, replaceSecrets }: EntryUpdate
 ): Promise<void> {
 	const current = await openSecret(services, entryId, 'secret.edit', 'save');
-	const blob = toBlob({ ...input, password: input.password || current.blob.password });
+	if (current.version !== expectedVersion) throw new DomainError('version_conflict');
+
+	const blob: SecretBlob = {
+		password: input.password || current.blob.password,
+		note: replaceSecrets ? input.note : current.blob.note,
+		fields: replaceSecrets ? input.fields : current.blob.fields
+	};
 	const nextVersion = current.version + 1;
 	const cipher = await services.cipherFor(current.keyName);
 	const ciphertext = await cipher.encrypt(serializeBlob(blob), buildAad(entryId, nextVersion));

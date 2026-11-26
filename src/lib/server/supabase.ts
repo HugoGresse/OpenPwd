@@ -37,7 +37,8 @@ export function createSupabaseClient(event: RequestEvent): AppSupabaseClient {
 			}
 		},
 		global: {
-			fetch: event.fetch,
+			// The platform fetch: event.fetch would forward this request's cookies to a same-host API.
+			fetch: globalThis.fetch,
 			headers: {
 				'x-openpwd-client-ip': clientAddress(event),
 				'x-openpwd-user-agent': event.request.headers.get('user-agent') ?? ''

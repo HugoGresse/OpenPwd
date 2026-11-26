@@ -53,10 +53,16 @@ describe('safeNextPath', () => {
 		expect(safeNextPath(path)).toBe(path);
 	});
 
-	it.each([null, '', 'https://evil.example', '//evil.example', '/\\evil.example', 'orgs'])(
-		'falls back to the home page for %s',
-		(path) => {
-			expect(safeNextPath(path)).toBe('/');
-		}
-	);
+	it.each([
+		null,
+		'',
+		'https://evil.example',
+		'//evil.example',
+		'/\\evil.example',
+		'/%09/evil.example',
+		'/\t/evil.example',
+		'orgs'
+	])('falls back to the home page for %s', (path) => {
+		expect(safeNextPath(path)).toBe('/');
+	});
 });

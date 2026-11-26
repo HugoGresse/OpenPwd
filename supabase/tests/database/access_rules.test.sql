@@ -2,14 +2,18 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(30);
+select plan(37);
 
 insert into private.instance_settings (key, value)
-values ('max_session_minutes', '120')
+values
+('max_session_minutes', '120'),
+('allow_password_login', 'false')
 on conflict (key) do update set value = excluded.value;
 
--- Acts as a member holding a session of the given age (minutes).
-create function pg_temp.act_as(p_user_id uuid, p_session_age integer default 1)
+-- Acts as a member holding a session of the given age (minutes) and sign-in method.
+create function pg_temp.act_as(
+    p_user_id uuid, p_session_age integer default 1, p_method text default 'oauth'
+)
 returns void
 language plpgsql
 as $$
@@ -19,6 +23,8 @@ begin
     perform set_config('role', 'postgres', true);
     insert into auth.sessions (id, user_id, created_at)
     values (v_session_id, p_user_id, now() - make_interval(mins => p_session_age));
+    insert into auth.mfa_amr_claims (id, session_id, created_at, updated_at, authentication_method)
+    values (gen_random_uuid(), v_session_id, now(), now(), p_method);
 
     perform set_config('role', 'authenticated', true);
     perform set_config(
@@ -42,9 +48,10 @@ $$;
 insert into auth.users (id, email, aud, role)
 values
 ('00000000-0000-0000-0000-00000000000a', 'Alice@example.org', 'authenticated', 'authenticated'),
-('00000000-0000-0000-0000-00000000000b', 'bob@example.org', 'authenticated', 'authenticated');
+('00000000-0000-0000-0000-00000000000b', 'bob@example.org', 'authenticated', 'authenticated'),
+('00000000-0000-0000-0000-00000000000d', 'dave@example.org', 'authenticated', 'authenticated');
 
-grant execute on function pg_temp.act_as(uuid, integer) to authenticated;
+grant execute on function pg_temp.act_as(uuid, integer, text) to authenticated;
 grant execute on function pg_temp.act_as_admin() to authenticated;
 
 select is(
@@ -184,6 +191,24 @@ select is(
     'adding an unknown email creates an invite'
 );
 
+select is(
+    public.add_member((select org_id from ctx), 'erin@example.org', 'owner'),
+    'invited',
+    'an owner can invite a future owner'
+);
+
+select is(
+    public.add_member((select org_id from ctx), 'dave@example.org', 'admin'),
+    'added',
+    'an owner can add an admin'
+);
+
+select public.create_entry(
+    '00000000-0000-0000-0000-0000000000e2',
+    (select org_id from ctx),
+    'Old mailbox', '', '', array[]::text [], false, 'cipher-v1'
+);
+
 select throws_ok(
     $$select public.remove_member((select org_id from ctx), '00000000-0000-0000-0000-00000000000a')$$,
     'P0001',
@@ -195,7 +220,7 @@ select pg_temp.act_as('00000000-0000-0000-0000-00000000000b');
 
 select is(
     (select count(*)::integer from public.entries),
-    1,
+    2,
     'a member sees the entries of the organization'
 );
 
@@ -232,6 +257,48 @@ select lives_ok(
         )
     $$,
     'an update with the next secret version is accepted'
+);
+
+select pg_temp.act_as('00000000-0000-0000-0000-00000000000d');
+
+select throws_ok(
+    $$select public.add_member((select org_id from ctx), 'erin@example.org', 'admin')$$,
+    '42501',
+    null,
+    'an admin cannot downgrade an invite made for an owner'
+);
+
+select throws_ok(
+    $$select public.remove_invite((select org_id from ctx), 'erin@example.org')$$,
+    '42501',
+    null,
+    'an admin cannot cancel an invite made for an owner'
+);
+
+select lives_ok(
+    $$select public.delete_entry('00000000-0000-0000-0000-0000000000e2')$$,
+    'a member can delete an entry'
+);
+
+select throws_ok(
+    $$
+        select public.create_entry(
+            '00000000-0000-0000-0000-0000000000e2',
+            (select org_id from ctx),
+            'Old mailbox', '', '', array[]::text[], false, 'cipher-v1'
+        )
+    $$,
+    '42501',
+    null,
+    'a deleted entry cannot be re-created under its old id to replay an old ciphertext'
+);
+
+select pg_temp.act_as('00000000-0000-0000-0000-00000000000a', 1, 'password');
+
+select is(
+    (select count(*)::integer from public.organizations),
+    0,
+    'a session opened with a password instead of Google sees nothing'
 );
 
 select pg_temp.act_as('00000000-0000-0000-0000-00000000000a', 121);
